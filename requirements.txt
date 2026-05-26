@@ -1,0 +1,6 @@
+cvxpy
+numpy
+pandas
+geopandas
+matplotlib
+requests
