@@ -2,7 +2,7 @@ import cvxpy as cp
 import numpy as np
 import pandas as pd
 
-
+print("dispatch.py loaded")
 def build_variables(fleet, T):
     G = fleet.index.tolist()
 
@@ -44,7 +44,7 @@ def con_reserve(fleet, p, demand, T, margin=0.10):
         constraints.append(total >= demand[t] * (1 + margin))
     return constraints
 
-def con_ramp(fleet, p, u, T):
+#def con_ramp(fleet, p, u, T):
     constraints = []
     for g in fleet.index:
         ramp = fleet.loc[g, "ramp"]
@@ -59,7 +59,7 @@ def con_ramp(fleet, p, u, T):
                 constraints.append(p[g, t-1] - p[g, t] <= ramp)
     return constraints
 
-def con_min_up_dn(fleet, u, T):
+#def con_min_up_dn(fleet, u, T):
     constraints = []
     for g in fleet.index:
         min_up = fleet.loc[g, "min_up"]
@@ -70,26 +70,83 @@ def con_min_up_dn(fleet, u, T):
         if init > 0:
             hours_locked_on = max(0, min_up - init)
             for t in range(hours_locked_on):
-                # force u[g, t] == 1
-                u[g, t] == 1
-                ...
+                constraints.append(u[g, t] == 1)
         elif init < 0:
             hours_locked_off = max(0, min_dn - abs(init))
             for t in range(hours_locked_off):
-                # force u[g, t] == 0
-                u[g, t] == 0
-                ...
+                constraints.append(u[g, t] == 0)
 
-        # --- general min up: if unit starts up at t, must stay on for min_up hours ---
+        # --- general min up ---
         for t in T:
             if t == 0:
-                continue  # handled by initial lock-in
-            # hint: use v[g, t] here -- but we haven't built v yet
-            # for now just leave as ... and we'll wire it in after con_startup_indicator
-            ...
+                continue
+            for t2 in range(t, min(t + min_up, len(T))):
+                constraints.append(u[g, t2] >= u[g, t] - u[g, t-1])
 
-        # --- general min dn: same idea for shutdowns ---
+        # --- general min dn ---
         for t in T:
-            ...
+            if t == 0:
+                continue
+            for t2 in range(t, min(t + min_dn, len(T))):
+                constraints.append(u[g, t2] <= 1 - (u[g, t-1] - u[g, t]))
 
     return constraints
+
+#def con_startup_indicator(fleet, v, u, T):
+    constraints = []
+    for g in fleet.index:
+        u0 = initial_state(fleet.loc[g])
+        for t in T:
+            if t == 0:
+                constraints.append(v[g, t] >= u[g, t] - u0)
+            else:
+                constraints.append(v[g, t] >= u[g, t] - u[g, t-1])
+    return constraints
+
+def build_objective(fleet, p, v, T):
+    fuel_cost = sum(
+        fleet.loc[g, "a"] + fleet.loc[g, "b"] * p[g, t] + fleet.loc[g, "c"] * p[g, t]**2
+        for g in fleet.index for t in T
+    )
+    startup_cost = sum(
+        fleet.loc[g, "hot_start_cost"] * v[g, t]
+        for g in fleet.index for t in T
+    )
+    return fuel_cost + startup_cost
+
+def build_constraints(fleet, p, u, v, demand, T):
+    constraints = []
+    constraints += con_capacity(fleet, p, u, T)
+    constraints += con_balance(fleet, p, demand, T)
+    constraints += con_reserve(fleet, p, demand, T)
+    #constraints += con_ramp(fleet, p, u, T)
+    #constraints += con_min_up_dn(fleet, u, T)
+    #constraints += con_startup_indicator(fleet, v, u, T)
+    return constraints
+
+
+def solve(fleet, demand):
+    T = range(24)
+    p, u, v = build_variables(fleet, T)
+    print(f"demand length: {len(demand)}")
+    print(f"T: {list(T)}")
+    print(f"fleet index: {fleet.index.tolist()}")
+    print(f"sample p key: {list(p.keys())[:3]}")
+    constraints = build_constraints(fleet, p, u, v, demand, T)
+    prob = cp.Problem(cp.Minimize(0), constraints)
+    prob.solve(solver=cp.SCIP)
+    print(f"status: {prob.status}")
+    return prob, p, u, v
+
+def extract_results(prob, p, u, v, fleet, demand):
+    results = []
+    for g in fleet.index:
+        for t in range(24):
+            results.append({
+                "unit": g,
+                "hour": t,
+                "p": p[g, t].value,
+                "u": u[g, t].value,
+                "v": v[g, t].value,
+            })
+    return pd.DataFrame(results)

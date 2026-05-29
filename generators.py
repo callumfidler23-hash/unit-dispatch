@@ -1,53 +1,55 @@
 """
-Generator fleet. Loosely based on IESO connected generator registry.
-Fill in real capacity/cost figures from the IESO generator list as you go.
-Coords are approximate zone centroids for now — replace with actuals.
+Generator fleet data for UC benchmark problems from Kazarlis et al. (1996).
+Demand profiles are stored alongside their corresponding fleet.
+
+add get_fleet_ontario() when ready to extend to the real system.
 """
 
 import pandas as pd
 
-# fuel type -> approximate marginal cost ($/MWh), rough Ontario figures
-FUEL_COST = {
-    "nuclear": 8,
-    "hydro":   12,
-    "wind":    0,
-    "solar":   0,
-    "gas":     85,
-    "gas_cc":  70,
-    "biofuel": 110,
+UNITS_5 = {
+    "name":            ["U1",     "U2",    "U3",    "U4",    "U5"   ],
+    "p_max":           [455,      130,     130,     80,      55     ],
+    "p_min":           [150,      20,      20,      20,      55     ],
+    "a":               [1000,     700,     680,     370,     660    ],
+    "b":               [16.19,    16.60,   16.50,   22.26,   25.92  ],
+    "c":               [0.00048,  0.002,   0.00211, 0.00712, 0.00413],
+    "min_up":          [8,        5,       5,       3,       1      ],
+    "min_dn":          [8,        5,       5,       3,       1      ],
+    "hot_start_cost":  [4500,     550,     560,     170,     30     ],
+    "cold_start_cost": [9000,     1100,    1120,    340,     60     ],
+    "cold_start_hrs":  [5,        4,       4,       2,       0      ],
+    "initial_status":  [8,        -5,      -5,      -3,      -1     ],
+    "ramp":            [455,      130,     130,     80,      55     ],
 }
 
-# columns: name, fuel, zone, p_min (MW), p_max (MW), ramp (MW/hr), must_run, lat, lon
-GENERATORS = [
-    # nuclear -- must-run, very flat ramp
-    ("Darlington",   "nuclear", "Toronto",  440, 3512,  50, True,  43.87, -78.71),
-    ("Pickering",    "nuclear", "Toronto",  440, 3100,  50, True,  43.81, -79.07),
-    ("Bruce",        "nuclear", "West",    1000, 6400,  80, True,  44.32, -81.60),
-
-    # hydro
-    ("Niagara",      "hydro",   "Niagara",   0, 1800, 600, False, 43.08, -79.07),
-    ("Ottawa River", "hydro",   "East",      0,  950, 400, False, 45.35, -76.35),
-    ("NW Hydro",     "hydro",   "Northwest", 0,  600, 300, False, 49.00, -88.00),
-
-    # wind (no fuel cost, curtailable)
-    ("Bruce Wind",   "wind",    "West",      0,  900, 900, False, 44.50, -81.40),
-    ("Amaranth",     "wind",    "West",      0,  200, 200, False, 44.00, -80.20),
-    ("East Wind",    "wind",    "East",      0,  300, 300, False, 44.50, -76.50),
-
-    # gas peakers
-    ("Portlands",    "gas",     "Toronto",   0,  550, 275, False, 43.64, -79.34),
-    ("Lennox",       "gas",     "East",      0, 2100, 525, False, 44.27, -76.82),
-    ("Greenfield",   "gas_cc",  "Southwest", 0,  280, 280, False, 42.95, -82.40),
-    ("Goreway",      "gas_cc",  "Toronto",   0,  875, 437, False, 43.77, -79.63),
+DEMAND_5 = [
+    400, 450, 480, 500, 530, 550, 580, 600,
+    620, 650, 680, 700, 650, 620, 600, 550,
+    500, 550, 600, 650, 600, 550, 500, 450,
 ]
 
+UNITS_10 = {
+    "name":            ["U1",     "U2",     "U3",    "U4",    "U5",    "U6",    "U7",    "U8",    "U9",    "U10"   ],
+    "p_max":           [455,      455,      130,     130,     162,     80,      85,      55,      55,      55      ],
+    "p_min":           [150,      150,      20,      20,      25,      20,      25,      10,      10,      10      ],
+    "a":               [1000,     970,      700,     680,     450,     370,     480,     660,     665,     670     ],
+    "b":               [16.19,    17.26,    16.60,   16.50,   19.70,   22.26,   27.74,   25.92,   27.27,   27.79  ],
+    "c":               [0.00048,  0.00031,  0.002,   0.00211, 0.00398, 0.00712, 0.00079, 0.00413, 0.00222, 0.00173],
+    "min_up":          [8,        8,        5,       5,       6,       3,       3,       1,       1,       1      ],
+    "min_dn":          [8,        8,        5,       5,       6,       3,       3,       1,       1,       1      ],
+    "hot_start_cost":  [4500,     5000,     550,     560,     900,     170,     260,     30,      30,      30     ],
+    "cold_start_cost": [9000,     10000,    1100,    1120,    1800,    340,     520,     60,      60,      60     ],
+    "cold_start_hrs":  [5,        5,        4,       4,       4,       2,       2,       0,       0,       0      ],
+    "initial_status":  [8,        8,        -5,      -5,      -6,      -3,      -3,      -1,      -1,      -1     ],
+    "ramp":            [455,      455,      130,     130,     162,     80,      85,      55,      55,      55     ],
+}
 
-def get_fleet():
-    cols = ["name", "fuel", "zone", "p_min", "p_max", "ramp_mw_hr", "must_run", "lat", "lon"]
-    df = pd.DataFrame(GENERATORS, columns=cols)
-    df["cost"] = df["fuel"].map(FUEL_COST)
-    return df
+DEMAND_10 = [
+    700,  750,  850,  950,  1000, 1100, 1150, 1200,
+    1300, 1400, 1450, 1500, 1400, 1300, 1200, 1050,
+    1000, 1100, 1200, 1400, 1300, 1100, 900,  800,
+]
 
-
-if __name__ == "__main__":
-    print(get_fleet().to_string())
+def get_fleet_5unit():
+    return pd.DataFrame(UNITS_5)
