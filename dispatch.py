@@ -134,7 +134,7 @@ def solve(fleet, demand):
     print(f"sample p key: {list(p.keys())[:3]}")
     constraints = build_constraints(fleet, p, u, v, demand, T)
     prob = cp.Problem(cp.Minimize(build_objective(fleet, p, u, v, T)), constraints)
-    prob.solve(solver=cp.SCIP, verbose=True, scip_params={"numerics/feastol": 1e-6})
+    prob.solve(solver=cp.SCIP)
     print(f"status: {prob.status}")
     return prob, p, u, v
 
