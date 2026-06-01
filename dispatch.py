@@ -37,14 +37,14 @@ def con_balance(fleet, p, demand, T):
     return constraints
 
 
-def con_reserve(fleet, p, demand, T, margin=0.10):
+def con_reserve(fleet, p, u, demand, T, margin=0.10):
     constraints = []
     for t in T:
-        total = sum(p[g, t] for g in fleet.index)
-        constraints.append(total >= demand[t] * (1 + margin))
+        available = sum(fleet.loc[g, "p_max"] * u[g, t] for g in fleet.index)
+        constraints.append(available >= demand[t] * (1 + margin))
     return constraints
 
-#def con_ramp(fleet, p, u, T):
+def con_ramp(fleet, p, u, T):
     constraints = []
     for g in fleet.index:
         ramp = fleet.loc[g, "ramp"]
@@ -59,7 +59,7 @@ def con_reserve(fleet, p, demand, T, margin=0.10):
                 constraints.append(p[g, t-1] - p[g, t] <= ramp)
     return constraints
 
-#def con_min_up_dn(fleet, u, T):
+def con_min_up_dn(fleet, u, T):
     constraints = []
     for g in fleet.index:
         min_up = fleet.loc[g, "min_up"]
@@ -92,7 +92,7 @@ def con_reserve(fleet, p, demand, T, margin=0.10):
 
     return constraints
 
-#def con_startup_indicator(fleet, v, u, T):
+def con_startup_indicator(fleet, v, u, T):
     constraints = []
     for g in fleet.index:
         u0 = initial_state(fleet.loc[g])
@@ -103,9 +103,9 @@ def con_reserve(fleet, p, demand, T, margin=0.10):
                 constraints.append(v[g, t] >= u[g, t] - u[g, t-1])
     return constraints
 
-def build_objective(fleet, p, v, T):
+def build_objective(fleet, p, u, v, T):
     fuel_cost = sum(
-        fleet.loc[g, "a"] + fleet.loc[g, "b"] * p[g, t] + fleet.loc[g, "c"] * p[g, t]**2
+        fleet.loc[g, "a"] * u[g, t] + fleet.loc[g, "b"] * p[g, t]
         for g in fleet.index for t in T
     )
     startup_cost = sum(
@@ -118,10 +118,10 @@ def build_constraints(fleet, p, u, v, demand, T):
     constraints = []
     constraints += con_capacity(fleet, p, u, T)
     constraints += con_balance(fleet, p, demand, T)
-    constraints += con_reserve(fleet, p, demand, T)
-    #constraints += con_ramp(fleet, p, u, T)
-    #constraints += con_min_up_dn(fleet, u, T)
-    #constraints += con_startup_indicator(fleet, v, u, T)
+    constraints += con_reserve(fleet, p, u, demand, T)
+    constraints += con_ramp(fleet, p, u, T)
+    constraints += con_min_up_dn(fleet, u, T)
+    constraints += con_startup_indicator(fleet, v, u, T)
     return constraints
 
 
@@ -133,8 +133,8 @@ def solve(fleet, demand):
     print(f"fleet index: {fleet.index.tolist()}")
     print(f"sample p key: {list(p.keys())[:3]}")
     constraints = build_constraints(fleet, p, u, v, demand, T)
-    prob = cp.Problem(cp.Minimize(0), constraints)
-    prob.solve(solver=cp.SCIP)
+    prob = cp.Problem(cp.Minimize(build_objective(fleet, p, u, v, T)), constraints)
+    prob.solve(solver=cp.SCIP, verbose=True, scip_params={"numerics/feastol": 1e-6})
     print(f"status: {prob.status}")
     return prob, p, u, v
 

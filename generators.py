@@ -53,3 +53,6 @@ DEMAND_10 = [
 
 def get_fleet_5unit():
     return pd.DataFrame(UNITS_5)
+
+def get_fleet_10unit():
+    return pd.DataFrame(UNITS_10)
